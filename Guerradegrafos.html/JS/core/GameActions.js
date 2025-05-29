@@ -12,6 +12,10 @@ GraphWarGame.prototype.setupEventListeners = function() {
     this.attackBtn.addEventListener('click', () => this.handleAttackBtnClick());
     this.fortifyBtn.addEventListener('click', () => this.handleFortifyBtnClick());
     this.endTurnBtn.addEventListener('click', () => this.endTurn());
+
+    // Não adicionamos listeners aqui para os botões do modal de fortificação,
+    // pois eles serão adicionados e removidos dinamicamente na função showFortifyModal.
+    // Isso evita que múltiplos listeners sejam anexados a cada vez que o modal é aberto.
 };
 
 GraphWarGame.prototype.handleTerritoryClick = function(territoryId) {
@@ -75,7 +79,8 @@ GraphWarGame.prototype.handleTerritoryClick = function(territoryId) {
                 } else if (!source.neighbors.includes(territoryId)) {
                     this.showMessage('Só pode fortificar para territórios vizinhos.');
                 } else {
-                    this.resolveFortification(this.fortifySource, territoryId);
+                    // Chamar a função para exibir o modal de fortificação
+                    this.showFortifyModal(this.fortifySource, territoryId);
                 }
             }
             break;
@@ -199,21 +204,24 @@ GraphWarGame.prototype.resolveAttack = function(attackerId, defenderId) {
     this.updateUI();
 };
 
-GraphWarGame.prototype.resolveFortification = function(sourceId, targetId) {
+GraphWarGame.prototype.resolveFortification = function(sourceId, targetId, armiesToMove) {
     const source = this.territories.find(t => t.id === sourceId);
     const target = this.territories.find(t => t.id === targetId);
 
     if (source.armies < 2) {
         this.showMessage('Mínimo de 2 exércitos para mover.');
-        this.fortifySource = null; this.selectedTerritory = null; this.updateUI(); return;
+        // Não é mais necessário resetar aqui pois o modal já foi fechado
+        return;
     }
     const maxMovable = source.armies - 1;
-    let armiesToMove = parseInt(prompt(`Quantas tropas mover de ${source.name} (${source.armies}) para ${target.name}? (Máx: ${maxMovable})`, Math.floor(maxMovable / 2) || 1));
 
+    // Verificar se o número de tropas é válido
     if (isNaN(armiesToMove) || armiesToMove <= 0 || armiesToMove > maxMovable) {
-        this.showMessage('Número inválido. Fortificação cancelada.');
-        this.fortifySource = null; this.selectedTerritory = null; this.updateUI(); return;
+        this.showMessage('Número inválido de tropas. Fortificação cancelada.');
+        this.fortifySource = null; this.selectedTerritory = null; this.updateUI();
+        return;
     }
+
     source.armies -= armiesToMove;
     target.armies += armiesToMove;
     this.updateTerritoryDisplay(sourceId);
@@ -221,10 +229,70 @@ GraphWarGame.prototype.resolveFortification = function(sourceId, targetId) {
     this.updateGameStats();
     this.showMessage(`${armiesToMove} tropas movidas de ${source.name} para ${target.name}.`);
     this.addToBattleLog(`Fortificação: ${armiesToMove} de ${source.name} para ${target.name}.`);
-    this.fortifySource = null; this.selectedTerritory = null;
-    // Player can only fortify once per turn in many Risk versions.
-    // this.gamePhase = 'ended_fortification'; // Or directly end turn / disable fortify button
+    this.fortifySource = null;
+    this.selectedTerritory = null;
     this.updateUI();
+};
+
+// Adicionar a função para mostrar o modal de fortificação
+GraphWarGame.prototype.showFortifyModal = function(sourceId, targetId) {
+    const source = this.territories.find(t => t.id === sourceId);
+    const target = this.territories.find(t => t.id === targetId);
+
+    if (!source || !target) return;
+
+    const fortifyModal = document.getElementById('fortify-modal');
+    const fortifySourceName = document.getElementById('fortify-source-name');
+    const fortifyTargetName = document.getElementById('fortify-target-name');
+    const fortifySourceArmies = document.getElementById('fortify-source-armies');
+    const fortifyMaxMovable = document.getElementById('fortify-max-movable');
+    const armiesToMoveInput = document.getElementById('armies-to-move-input');
+    const confirmFortifyBtn = document.getElementById('confirm-fortify-btn');
+    const cancelFortifyBtn = document.getElementById('cancel-fortify-btn');
+
+    const maxMovable = source.armies - 1;
+    if (maxMovable <= 0) {
+        this.showMessage('Território de origem precisa de mais de 1 exército para fortificar.');
+        this.fortifySource = null; this.selectedTerritory = null; this.updateUI();
+        return;
+    }
+
+    fortifySourceName.textContent = source.name;
+    fortifyTargetName.textContent = target.name;
+    fortifySourceArmies.textContent = source.armies;
+    fortifyMaxMovable.textContent = maxMovable;
+    armiesToMoveInput.value = Math.max(1, Math.floor(maxMovable / 2)); // Valor padrão
+    armiesToMoveInput.max = maxMovable;
+    armiesToMoveInput.min = 1;
+
+    fortifyModal.style.display = 'flex'; // Exibe o modal
+
+    // Limpa listeners antigos para evitar duplicações
+    confirmFortifyBtn.onclick = null;
+    cancelFortifyBtn.onclick = null;
+
+    // Adiciona listeners para os botões do modal
+    confirmFortifyBtn.onclick = () => {
+        const armies = parseInt(armiesToMoveInput.value);
+        this.resolveFortification(sourceId, targetId, armies);
+        fortifyModal.style.display = 'none'; // Esconde o modal
+    };
+
+    cancelFortifyBtn.onclick = () => {
+        this.showMessage('Fortificação cancelada.');
+        this.fortifySource = null; this.selectedTerritory = null; this.updateUI();
+        fortifyModal.style.display = 'none'; // Esconde o modal
+    };
+
+    // Fechar ao clicar fora do modal
+    fortifyModal.onclick = (event) => {
+        if (event.target === fortifyModal) {
+            this.showMessage('Fortificação cancelada.');
+            this.fortifySource = null; this.selectedTerritory = null; this.updateUI();
+            fortifyModal.style.display = 'none';
+            fortifyModal.onclick = null; // Remove this specific listener to avoid interference
+        }
+    };
 };
 
 GraphWarGame.prototype.startPlayerTurn = function() {
